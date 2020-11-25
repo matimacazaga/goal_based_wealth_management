@@ -49,14 +49,14 @@ def main(W_init: float, G: float, cashflows: np.ndarray, T: int,
          mu_portfolios: np.ndarray, sigma_portfolios: np.ndarray,
          i_max_init: int, h: float) -> list:
 
-    # 2. Generar la grilla de puntos
+    # Generate state space gridpoints
 
-    # a. Crear grilla vacia y agregar W_init
+    # Initialize gridpoints with W(t=0)=W_init
     grid_points = List()
 
     grid_points.append(np.array([W_init]))
 
-    # b., c., d.
+    # Create gridpoints for t=1,2,...,T
 
     sigma_max = sigma_portfolios[-1]
 
@@ -66,37 +66,39 @@ def main(W_init: float, G: float, cashflows: np.ndarray, T: int,
 
     for tt in time_values[1:]:
 
-        i_max_t = i_max_init * ceil(tt*h)
+        i_max_t = i_max_init * ceil(tt*h)  # New i_max
         i_array_t = np.arange(-i_max_t, i_max_t+1, 1)
 
-        W_minus_i_max_prev = grid_points[tt-1][0]
-        W_i_max_prev = grid_points[tt-1][-1]
-        cashflow_prev = cashflows[tt-1]
+        W_minus_i_max_prev = grid_points[tt-1][0]  # Previus minimum wealth
+        W_i_max_prev = grid_points[tt-1][-1]  # Previous maximum wealth
+        cashflow_prev = cashflows[tt-1]  # Previous cashflow
 
-        if W_minus_i_max_prev + cashflow_prev > 0.:  # d.1
+        if W_minus_i_max_prev + cashflow_prev <= 0.:  # -> bankruptcy for previous minimum wealth
 
-            W_minus_i_max_t = (W_minus_i_max_prev + cashflow_prev)*exp(
-                (mu_min - 0.5*sigma_max**2)*h +
-                sigma_max*sqrt(h)*(-3.5)
-            )
-
-        else:  # d.2
+            # Search the minimum positive value of wealth such that W_i(t) + cashflow(t) > 0
 
             W_i_pos_prev = grid_points[tt -
                                        1][grid_points[tt-1] + cashflow_prev > 0.]
 
+            # If no wealth is positive after taking into account the cashflow, bankruptcy is guaranteed
             assert len(W_i_pos_prev) != 0., 'Bankruptcy guaranteed'
 
-            W_minus_i_max_t = (W_i_pos_prev[0] + cashflow_prev)*exp(
-                (mu_min - 0.5*sigma_max**2)*h +
-                sigma_max*sqrt(h)*(-3.5)
-            )
+            # Overwrite the previous minimum wealth
+            W_minus_i_max_prev = W_i_pos_prev[0]
+
+        # Compute the new minimum and maximum wealth values
+
+        W_minus_i_max_t = (W_minus_i_max_prev + cashflow_prev)*exp(
+            (mu_min - 0.5*sigma_max**2)*h +
+            sigma_max*sqrt(h)*(-3.5)
+        )
 
         W_i_max_t = (W_i_max_prev + cashflow_prev) * exp(
             (mu_max - 0.5*sigma_max**2)*h +
             sigma_max * sqrt(h) * 3.5
         )
 
+        # Generate the grid using interpolation
         grid_points_t = np.exp(
             ((i_array_t - (-i_max_t))/(2. * i_max_t)) *
             (log(W_i_max_t) - log(W_minus_i_max_t)) +
@@ -105,22 +107,25 @@ def main(W_init: float, G: float, cashflows: np.ndarray, T: int,
 
         grid_points.append(grid_points_t)
 
-    # 3. Resolver la ec. de Bellman por backward recursion.
+    # Solve Bellman equation by backward recursion.
 
+    # Value function at t=T
     value_i_t_plus_1 = np.where(grid_points[-1] >= G, 1., 0.)
 
+    # Start with t=T-1
     for tt in time_values[:-1][::-1]:
 
         transition_probabilities = np.zeros(
             shape=(grid_points[tt+1].shape[0], grid_points[tt].shape[0])
         )
 
-        value_i_t = np.zeros_like(grid_points[tt])
+        value_i_t = np.ones_like(grid_points[tt]) * -1.
 
         mu_i_t = np.zeros_like(grid_points[tt])
 
         sigma_i_t = np.zeros_like(grid_points[tt])
 
+        # Estimate transition probabilities for each (mu,sigma) pair
         for sigma, mu in zip(sigma_portfolios, mu_portfolios):
 
             sigma_inv = 1./sigma
@@ -138,19 +143,25 @@ def main(W_init: float, G: float, cashflows: np.ndarray, T: int,
 
                     transition_probabilities[j, i] = standard_normal_dist(z)
 
+            # Nomralize transition probabilities
             transition_probabilities = transition_probabilities / \
                 transition_probabilities.sum(axis=0)
 
+            # Obtain V(W_i)(t) for the given (mu,sigma) pair
             value_i_mu = value_i_t_plus_1 @ transition_probabilities
 
+            # Check wether the new value with (mu, sigma) is greater than the previous one
             mask = value_i_mu > value_i_t
 
+            # Update the maximum values
             value_i_t = np.where(mask, value_i_mu, value_i_t)
 
+            # Update the mu and sigma values that maximizes V(W_i)
             mu_i_t = np.where(mask, mu, mu_i_t)
 
             sigma_i_t = np.where(mask, sigma, sigma_i_t)
 
+        # Update V(W_i)(t+1)
         value_i_t_plus_1 = value_i_t
 
     return value_i_t, mu_i_t, sigma_i_t
