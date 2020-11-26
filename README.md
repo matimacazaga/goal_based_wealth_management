@@ -10,7 +10,7 @@ Currently, the input portfolios are all on the efficient frontier (Modern Portfo
 
 This implementation uses a single goal value function:
 
-<img src="https://latex.codecogs.com/svg.latex?\Large&space;V(W_{i}(T))=\left\{\begin{array}{ccc} 0&\text{if}&W_{i}(T)<G\\ 1&\text{if}&W_{i}(T)\geq G,\end{array}\right."/>
+<img src="https://latex.codecogs.com/svg.latex?\Large&space;V(W_{i}(T))=\left\{\begin{array}{ccc} 0&\text{if}&W_{i}(T)<G\\1&\text{if}&W_{i}(T)\geq G,\end{array}\right."/>
 
 where W<sub>i</sub>(T) is the investor's wealth at time t=T and G is the goal wealth. However, a multiple goal value function can be easily implemented.
 
